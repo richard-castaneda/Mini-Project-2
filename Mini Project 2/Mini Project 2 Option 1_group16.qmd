@@ -1,0 +1,406 @@
+---
+title: "Mini Project 2: Option 1 Group 16- Adnan Shakil"
+format: html
+editor: visual
+---
+
+```{r, echo=TRUE}
+# Run this code chunk without changing it
+library(dplyr)
+library(caret)
+library(ggplot2)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+
+
+
+```
+
+# MINI PROJECT 2:
+
+As a group, you consult to a bank that is interested in understanding what drives loans made by the bank to default ("bad" status). You are provided with a data set that contains 4,455 observations and 14 variables, shown below:
+
+**Target Variable**
+
+-   **Status:** credit status (Good=1, Bad=2)
+
+**Predictors**
+
+-   **Seniority** job seniority (years)
+
+-   **Home** type of homeownership (1=rent, 2=owner, 3=priv, 4=ignore, 5=parents, 6=other)
+
+-   **Time** time of requested loan
+
+-   **Age** client's age
+
+-   **Marital** marital status (1=single, 2=married, 3=widow, 4=separated, 5=divorced)
+
+-   **Records** existence of records (1=no, 2=yes)
+
+-   **Job** type of job(1=fixed, 2=parttime, 3=freelance, 4=others)
+
+-   **Expenses** amount of expenses
+
+-   **Income** amount of income
+
+-   **Assets** amount of assets
+
+-   **Debt** amount of debt
+
+-   **Amount** amount requested of loan
+
+-   **Price** price of good
+
+This project is composed of three parts:
+
+-   Part 1\[20 points\]: Data Prep
+
+-   Part 2 \[45 points\]: Prediction with Decision Trees
+
+-   Part 3\[35 points\]: Prediction with Logistic Regression
+
+## Read the data in R
+
+```{r, echo=TRUE}
+# Run this code chunk without changing it
+creditdata<-read.csv("MP2_data_option1.csv", header = TRUE)
+
+```
+
+## PART 1: Data Preperation
+
+Your first task is to clean the data as instructed below. Normally, you would need to do a through quality check on the data but for this group project, we will focus more on the modelling part. In real life, before modelling your data, you would need to take a deeper look at the shape and structure of your data set. Things like identifying errors, checking the distributions of your variables, checking for need for data transformation, should be always in your checklist before modeling your data.
+
+#### Task 1A: Data preparation
+
+There were some data entry errors:
+
+-   **Status** variable was coded 0 for certain individuals. Drop rows from **creditdata** when **Status** variable takes the value of 0.
+
+-   **Marital** variable was coded 0 for certain individuals. Drop rows from **creditdata** when **Marital** variable takes the value of 0.
+
+-   **Job** variable was coded 0 for certain individuals. Drop rows from **creditdata** when **Job** variable takes the value of 0.
+
+-   For some variables, the missing values were coded with 99999999 to indicate that the observation is missing. Drop rows from **creditdata** when **Income, Assets,** or **Debt** variable takes the value of 99999999. You can use subset function for this task.
+
+-   Declare the following variables as factor: **Status, Home, Marital, Records**, and **Job**.
+
+-   Label **Status** variable as "*Good" and "Bad"*
+
+-   If you end up with 4375 rows, then you are on the right track.
+
+```{r, echo=TRUE}
+# Insert your codes for Task 1A  below
+# Read the CSV file
+creditdata <- read.csv("MP2_data_option1.csv", header = TRUE)
+
+# Drop rows where Status, Marital, or Job equals 0
+creditdata <- creditdata[creditdata$Status != 0 & creditdata$Marital != 0 & creditdata$Job != 0, ]
+
+# Drop rows where Income, Assets, or Debt equals 99999999
+creditdata <- subset(creditdata, Income != 99999999 & Assets != 99999999 & Debt != 99999999)
+
+# Declare variables as factors
+creditdata$Status <- factor(creditdata$Status, levels = c(1, 2), labels = c("Good", "Bad"))
+creditdata$Home <- factor(creditdata$Home)
+creditdata$Marital <- factor(creditdata$Marital)
+creditdata$Records <- factor(creditdata$Records)
+creditdata$Job <- factor(creditdata$Job)
+
+# Check the number of rows in the cleaned data frame
+nrow(creditdata) # should return 4375
+```
+
+#### Task 1B: Split your data
+
+By using **createDataPartition** function in **caret** package, split the **creditdata** by holding 75% of the data in **train_data**, and the rest in **test_data**. Use **set.seed(5410)** when you do the split .
+
+```{r, echo=TRUE}
+# Insert your codes for Task 1B  below
+library(caret)
+
+# Set the seed for reproducibility
+set.seed(5410)
+
+# Split the data into training and testing sets
+train_index <- createDataPartition(creditdata$Status, p = 0.75, list = FALSE)
+train_data <- creditdata[train_index, ]
+test_data <- creditdata[-train_index, ]
+```
+
+## Part 2: Classification Tree and Ensemble Model
+
+### Task 2A: Training with Classication Tree
+
+First, you will use a classification tree to predict **Status** in **train_data** with all the predictors in our data set. Use **rpart** function in **rpart** package to build a decision tree to estimate **Status** by using the **train_data** and name your model as **model_tree**. Since we construct classification tree, you need to use *method="class"* in **rpart** function.
+
+Use the following parameters in **model_tree** (Hint: use **rpart.control** in **rpart** function).
+
+-   use 10-fold cross validation (**xval=10**)
+
+-   use complexity parameter of 0.001 (**cp=0.001**)
+
+-   use at least 3 observations in each terminal node (**minbucket=3**)
+
+-   Based on **model_tree** results, which three variables contribute most to classify **Status** in the **train_data**?
+
+```{r, echo=TRUE}
+# Insert your codes for Task 2A  below
+library(rpart)
+
+# Train a classification tree using rpart
+model_tree <- rpart(Status ~ ., data = train_data, method = "class", 
+                    control = rpart.control(cp = 0.001, minsplit = 2, minbucket = 3, xval = 10))
+
+# Print the summary of the tree
+summary(model_tree)
+
+```
+
+### TASK 2B: Predict Status in the test data
+
+-   By using **model_tree**, predict **Status** labels in **test_data** and store them as **predict_model_tree**. You can use **predict()** function for this task and select **type="class"** to retrieve labels. We define Good credit status as *positive class* (when Status=1) and Bad credit status as *Negative class* (when Status=2).
+
+-   Now, we need the performance measures to compare **model_tree** with the models you will create in the following sections. By using the actual and predicted Status labels in **test_data**, do the followings:
+
+1.  Calculate accuracy and name it as accuracy_model_tree
+
+2.  Calculate precision and name it as precision_model_tree
+
+3.  Calculate sensitivity and name it as sensitivity_model_tree
+
+4.  Calculate specificity and name it as specificity_model_tree
+
+```{r, echo=TRUE}
+# Insert your codes for Task 2B  below
+# Predict Status labels in test_data using model_tree
+predict_model_tree <- predict(model_tree, newdata = test_data, type = "class")
+
+# Calculate performance measures
+TP <- sum(predict_model_tree == 1 & test_data$Status == 1)
+TN <- sum(predict_model_tree == 2 & test_data$Status == 2)
+FP <- sum(predict_model_tree == 1 & test_data$Status == 2)
+FN <- sum(predict_model_tree == 2 & test_data$Status == 1)
+
+accuracy_model_tree <- (TP + TN) / (TP + TN + FP + FN)
+precision_model_tree <- TP / (TP + FP)
+sensitivity_model_tree <- TP / (TP + FN)
+specificity_model_tree <- TN / (TN + FP)
+```
+
+## Training with Random Forest Model
+
+In this task, we will see if random forest model can help us to improve our prediction. In Random forest, many different trees are fitted to random subsets of the data via bootstrapping, then tree averages/majorities are used in final classification. We will use **ranger** function but since we want to go beyond out-of-bag error rate performance measure and want to get a better sense of the model performance, we will call **ranger** within **train()** function in **caret** package (**method="ranger"**). This way, we can tune the parameters of the model.
+
+In ensemble models such as Random forest, Out of Bag and Cross-Validation are the two resampling solutions for tuning the model. With **trainControl()** function, we can modify the default selections. In this project, we will use 10-fold cross-validation **(trainControl(method="cv",number=10)).**
+
+In this project, search through **mtry** values 2,5,7,9,11, and 13 and use "**gini**" as the split rule (**splitrule**). For minimum node size, check values from 1 to 5 (**min.node.size**).
+
+## TASK 2C: Training with Random Forest Model
+
+By using the **train**() function in **caret** package, use random forest model with **ranger** method to estimate **Status** in **train_data** with the the tuning parameters provided above. Name your model as **model_rf** and use **set.seed(5410)** for reproducible findings.
+
+```{r, echo=TRUE}
+# Insert your codes for Task 2C  below
+# Task 2C
+
+set.seed(5410)
+library(caret)
+library(ranger)
+
+# define the train control
+ctrl <- trainControl(method="cv", number=10)
+
+# tune parameters
+tuneGrid <- expand.grid(mtry=c(2,5,7,9,11,13),
+                        splitrule="gini",
+                        min.node.size=c(1:5))
+
+# train random forest model with ranger method
+model_rf <- train(Status ~ ., 
+                  data=train_data, 
+                  method="ranger",
+                  trControl=ctrl,
+                  tuneGrid=tuneGrid)
+
+
+```
+
+-   What is the highest accuracy measure in **model_rf**? Which specific parameters (mtry and min.node.size) give us the highest accuracy?
+
+```{r, echo=TRUE}
+# Extract the highest accuracy measure
+best_accuracy <- max(model_rf$results$Accuracy)
+
+# Get the corresponding mtry and min.node.size values
+best_params <- subset(model_rf$results, Accuracy == best_accuracy, select = c("mtry", "min.node.size"))
+
+# Print the results
+cat("The highest accuracy measure in model_rf is:", best_accuracy, "\n")
+cat("The corresponding mtry and min.node.size values are:", paste0(best_params$mtry, ", ", best_params$min.node.size))
+
+```
+
+### TASK 2D: Prediction with Random Forest Model
+
+Based on the best tuned parameters in **model_rf**, predict **Status** labels in **test_data** and store your predictions as **predict_model_rf**.
+
+```{r, echo=TRUE}
+
+# Insert your codes for Task 2D  below
+# Predict the status labels in test_data using the best tuned parameters in model_rf
+predict_model_rf <- predict(model_rf, newdata = test_data)
+
+```
+
+-   Print the **Confusion Matrix** and comment on your findings. Which model (**model_rf** or **model_tree**) does a perfect job to predict **Status** in **test_data** based on **Accuracy** **ratio**?
+
+    ENTER YOUR ANSWER IN HERE!
+
+    ```{r, echo=TRUE}
+    # Predict using model_rf
+    predict_model_rf <- predict(model_rf, newdata = test_data)
+
+    # Confusion matrix and accuracy of model_rf
+    conf_mat_rf <- confusionMatrix(predict_model_rf, test_data$Status)
+    conf_mat_rf$overall['Accuracy']
+    conf_mat_rf$table
+
+    ```
+
+-   
+
+    ## TASK 2E: In search of a better model?
+
+    Now, your task is to modify **model_rf** with different tuning parameters to see if you can get a higher accuracy ratio for test data. Name your revised model as **model_rf_best** and use **set.seed(5410)** for reproducible findings.
+
+```{r, echo=TRUE}
+# Insert your codes for Task 2E  below
+set.seed(5410)
+rfGrid <- expand.grid(mtry = c(3, 5, 10, 15, 16, 17, 19), 
+                      min.node.size = c(5, 10, 25, 45, 85, 150, 500 ),
+                      splitrule = "gini")
+# Splitting rule. For classification and probability estimation "gini", "extratrees" or "hellinger" with default "gini". For regression "variance", "extratrees", "maxstat" or "beta" with default "variance". For survival "logrank", "extratrees", "C" or "maxstat" with default "logrank".
+
+model_rf_best <- train(Status ~ . , data = train_data, method = "ranger",
+                num.trees = 100,
+                importance = 'impurity',
+                tuneGrid = rfGrid,
+                trControl = trainControl("oob"))
+model_rf_best
+# Find the best accuracy and corresponding parameters
+best_acc <- max(model_rf_best$results$Accuracy)
+best_params <- model_rf_best$bestTune
+
+# Print the best accuracy and corresponding parameters
+cat("Best accuracy:", best_acc, "\n")
+print("Best parameters:")
+print(best_params)
+
+
+
+```
+
+## Part 3: Logistic Regression
+
+Use the **train_data** data to perform logistic regression for the following two models: The first one uses only three predictors, the second one is the multiple logistic regression with all predictors. Given that $P(Y)$ stands for the probability of being "*Good Status*" (*Status="Good" or Y=1*), the two logistic models are as follows:
+
+-   $Logistic1 = log(\frac{P(Y)}{1-P(Y)})=\beta_{0}+\beta_{1}Income+\beta_{2}Price+\beta_{3}Amount$
+
+-   $Logistic2 = log(\frac{P(Y)}{1-P(Y)})=\beta_{0}+\beta_{1}Seniority+\beta_{2}Home+\beta_{3}Time+\beta_{4}Age+\beta_{5}Marital+\beta_{6}Records+\beta_{7}Job+\\~~~~~~~~~~~~~~~~~~~~\beta_{8}Expenses +\beta_{9}Income+\beta_{10}Assets+\beta_{11}Debt+\beta_{12}Amount+\beta_{13}Price$
+
+The left side of the equation above is called logged odds or logit.
+
+## Task 3A: Accessing Model Accuracy: Confusion matrix
+
+Use **train** function in **caret** package and by using the **train_data** data, fit 10-fold cross validated logistic regression for models **Logistic1** and **Logistic2** . Set the seed function as **set.seed(5410)**. By using the **confusionMatrix()** function in **caret** package, calculate the confusion matrix for each model. What the confusion matrix is telling you about the types of mistakes made by logistic regression?
+
+ENTER YOUR ANSWER IN HERE!
+
+```{r, echo=TRUE}
+# Insert your codes for Task 3A  below
+library(caret)
+
+# Set seed
+set.seed(5410)
+
+# Fit logistic regression model for Logistic1
+logistic1 <- train(
+  Status ~ Income + Price + Amount,
+  data = train_data,
+  method = "glm",
+  trControl = trainControl(method = "cv", number = 10),
+  family = "binomial"
+)
+
+# Fit logistic regression model for Logistic2
+logistic2 <- train(
+  Status ~ .,
+  data = train_data,
+  method = "glm",
+  trControl = trainControl(method = "cv", number = 10),
+  family = "binomial"
+)
+
+# Calculate confusion matrix for Logistic1
+confusionMatrix(predict(logistic1, train_data), train_data$Status)
+
+# Calculate confusion matrix for Logistic2
+confusionMatrix(predict(logistic2, train_data), train_data$Status)
+
+
+
+```
+
+## Task 3B: Predict Status with Logistic Reression
+
+-   By using **Logistic1**, predict **Status** labels in **test_data** and store them as **predict_Logistic1**. We define Good credit status as positive class (when Status=1) and Bad credit status as Negative class (when Status=2).
+
+-   By using **Logistic2**, predict **Status** labels in **test_data** and store them as **predict_Logistic2**.
+
+-   By using the actual and predicted **Status** labels in **test_data**, print the following performance measures for **Logistic1** and **Logistic2**:
+
+-   Accuracy
+
+-   Sensitivity
+
+-   Specificity
+
+```{r echo=TRUE}
+# Insert your codes for Task 3B  below
+# Logistic1 predictions
+# Logistic1 predictions
+set.seed(5410)
+Logistic1 <- glm(Status ~ Income + Price + Amount, data = train_data, family = "binomial")
+predict_Logistic1 <- predict(Logistic1, newdata = test_data, type = "response")
+
+# Logistic2 predictions
+Logistic2 <- glm(Status ~ Seniority + Home + Time + Age + Marital + Records + Job + Expenses + Income + Assets + Debt + Amount + Price, data = train_data, family = "binomial")
+predict_Logistic2 <- predict(Logistic2, newdata = test_data, type = "response")
+
+# Define actual and predicted labels
+actual <- ifelse(test_data$Status == "Good", 1, 0)
+predicted_Logistic1 <- ifelse(predict_Logistic1 > 0.5, 1, 0)
+predicted_Logistic2 <- ifelse(predict_Logistic2 > 0.5, 1, 0)
+
+# Calculate performance measures for Logistic1
+confusionMatrix(as.factor(predicted_Logistic1), as.factor(actual))$overall['Accuracy']
+
+confusionMatrix(as.factor(predicted_Logistic1), as.factor(actual))$byClass['Sensitivity']
+confusionMatrix(as.factor(predicted_Logistic1), as.factor(actual))$byClass['Specificity']
+
+# Calculate performance measures for Logistic2
+confusionMatrix(as.factor(predicted_Logistic2), as.factor(actual))$overall['Accuracy']
+confusionMatrix(as.factor(predicted_Logistic2), as.factor(actual))$byClass['Sensitivity']
+confusionMatrix(as.factor(predicted_Logistic2), as.factor(actual))$byClass['Specificity']
+
+
+```
+
+## Task 3C: Model Selection
+
+Based on your findings in Sections 1, 2 and 3, which model performs best in **test_data** by using the **Accuracy** measure?
+
+Based on the findings, the Random Forest model has the highest accuracy of 0.791 in the resampled data. However, for logistic regression, Logistic1 performed better than Logistic2, with an accuracy of 0.70 compared to 0.64. Therefore, if accuracy is the only measure, the Random Forest model is the best choice for this dataset.
